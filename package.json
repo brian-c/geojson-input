@@ -3,11 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "main": "dist/my-element.es.js",
+  "main": "dist/geojson-input.es.js",
   "exports": {
-    ".": "./dist/my-element.es.js"
+    ".": "./dist/geojson-input.es.js"
   },
-  "types": "types/my-element.d.ts",
+  "types": "types/geojson-input.d.ts",
   "files": [
     "dist",
     "types"
@@ -16,7 +16,11 @@
     "dev": "vite",
     "build": "tsc && vite build"
   },
+  "dependencies": {
+    "leaflet": "^1.8.0"
+  },
   "devDependencies": {
+    "@types/leaflet": "^1.7.11",
     "typescript": "^4.6.4",
     "vite": "^3.0.7"
   }

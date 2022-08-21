@@ -1,0 +1,8 @@
+:host {
+	display: block;
+	height: 300px;
+}
+
+#map-container {
+	height: 100%;
+}
