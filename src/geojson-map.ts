@@ -3,11 +3,8 @@ import leafletCss from 'leaflet/dist/leaflet.css?inline';
 import mapCss from './geojson-map.css?inline';
 
 export default class GeoJSONMap extends HTMLElement {
-	static get observedAttributes() {
-		return ['center', 'zoom'];
-	}
-
-	#map = null as L.Map | null;
+	protected mapContainer: HTMLDivElement;
+	protected map = null as L.Map | null;
 
 	get tiles(): string {
 		return this.getAttribute('tiles') ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -20,7 +17,7 @@ export default class GeoJSONMap extends HTMLElement {
 
 	set center(value) {
 		this.setAttribute('center', value.join(','));
-		this.#map?.setView([value[1], value[0]]);
+		this.map?.setView([value[1], value[0]]);
 	}
 
 	get zoom(): number {
@@ -29,29 +26,31 @@ export default class GeoJSONMap extends HTMLElement {
 
 	set zoom(value) {
 		this.setAttribute('zoom', value.toString());
-		this.#map?.setZoom(value);
+		this.map?.setZoom(value);
 	}
 
 	constructor() {
 		super();
+
 		this.attachShadow({ mode: 'open' });
+
+		this.shadowRoot!.innerHTML = `
+			<style>${leafletCss}</style>
+			<style>${mapCss}</style>
+			<div id="map-container"></div>
+		`;
+
+		this.mapContainer = this.shadowRoot!.getElementById('map-container') as HTMLDivElement;
 	}
 
 	connectedCallback() {
-		const style = this.ownerDocument.createElement('style');
-		style.textContent = [mapCss, leafletCss].join('\n');
-		this.shadowRoot!.append(style);
-
-		const container = this.ownerDocument.createElement('div');
-		container.id = 'map-container';
-		this.shadowRoot!.append(container);
-
-		this.#map = new L.Map(container);
-		this.#map.addLayer(new L.TileLayer(this.tiles));
-		this.#map.setView(new L.LatLng(this.center[1], this.center[0]), this.zoom);
+		this.map = new L.Map(this.mapContainer);
+		this.map.addLayer(new L.TileLayer(this.tiles));
+		this.map.setView(new L.LatLng(this.center[1], this.center[0]), this.zoom);
 	}
 
 	disconnectedCallback() {
-		this.#map?.remove();
+		this.map?.remove();
+		this.map = null;
 	}
 }

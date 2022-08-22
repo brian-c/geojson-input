@@ -5,13 +5,30 @@
 		<meta charset="UTF-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1.0">
 		<title>GeoJSON input element</title>
-		<script type="module">
-			import GeoJSONMap from './src/geojson-map.ts';
-			customElements.define('geojson-map', GeoJSONMap);
-		</script>
 	</head>
 
 	<body>
-		<geojson-map></geojson-map>
+		<form id="form">
+			<input type="text" name="just-text" value="This is a text input.">
+			<geojson-input name="starts-empty"></geojson-input>
+			<geojson-input name="starts-with-value" value='{"type": "Feature","geometry": {"type": "Polygon","coordinates": [[[-87.98,41.61],[-87.56,41.61],[-87.56,41.98],[-87.98,41.98],[-87.98,41.61]]]}}'></geojson-input>
+		</form>
+
+		<output id="form-output" for="form"></output>
+
+		<script type="module">
+			import GeoJSONInput from './src/geojson-input.ts';
+			customElements.define('geojson-input', GeoJSONInput);
+
+			const form = document.getElementById('form');
+			const output = document.getElementById('form-output');
+			form.addEventListener('change', handleChange);
+			handleChange();
+
+			function handleChange() {
+				const data = Object.fromEntries(new FormData(form).entries());
+				output.innerHTML = `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+			}
+		</script>
 	</body>
 </html>

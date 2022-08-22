@@ -17,6 +17,7 @@
     "build": "tsc && vite build"
   },
   "dependencies": {
+    "@turf/turf": "^6.5.0",
     "leaflet": "^1.8.0"
   },
   "devDependencies": {

@@ -1,0 +1,26 @@
+:host {
+	font-size: 1rem;
+	position: relative;
+}
+
+#toolbar {
+	position: absolute;
+	left: 0;
+	top: 0;
+	z-index: 401;
+}
+
+.button-group {
+	display: flex;
+	flex-direction: column;
+	margin: 1ch;
+}
+
+button[name="tool"][aria-pressed="true"]::after {
+	content: "✓";
+}
+
+:host([tool="add"]) > #map-container,
+:host([tool="subtract"]) > #map-container {
+	cursor: crosshair;
+}

@@ -1,8 +1,9 @@
 :host {
-	display: block;
+	display: flex;
+	flex-direction: column;
 	height: 300px;
 }
 
 #map-container {
-	height: 100%;
+	flex: 1 1;
 }
