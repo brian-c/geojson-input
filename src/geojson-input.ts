@@ -42,8 +42,12 @@ export default class GeoJSONInput extends GeoJSONMap {
 			this.removeAttribute('value');
 			this.#internals.setFormValue(null);
 		}
+
 		const subtractButton = this.toolbar.querySelector('button[name="tool"][value="subtract"]') as HTMLButtonElement;
 		subtractButton.disabled = !value;
+
+		this.updateLayer(this.#valueLayer, value);
+		this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 	}
 
 	get tool(): Tool {
@@ -81,6 +85,10 @@ export default class GeoJSONInput extends GeoJSONMap {
 					<button type="button" name="tool" value="add" aria-pressed="false">Add</button>
 					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract</button>
 				</div>
+
+				<div class="button-group">
+					<button type="button" name="import" value="geojson" aria-pressed="true">GeoJSON</button>
+				</div>
 			</div>
 		`);
 
@@ -116,11 +124,22 @@ export default class GeoJSONInput extends GeoJSONMap {
 	}
 
 	handleToolbarClick = (event: MouseEvent) => {
-		const button = (event.target as typeof this.toolbar).closest('button') as HTMLButtonElement | null;
-		if (button?.name === 'zoom') {
-			this.map?.zoomIn(parseFloat(button.value));
-		} else if (button?.name === 'tool') {
-			this.tool = button.value as Tool;
+		const button = (event.target as typeof this.toolbar).closest('button');
+		if (button instanceof HTMLButtonElement) {
+			if (button.name === 'zoom') {
+				this.map?.zoomIn(parseFloat(button.value));
+			} else if (button.name === 'tool') {
+				this.tool = button.value as Tool;
+			} else if (button.name === 'import') {
+				if (button.value === 'geojson') {
+					try {
+						const geojson = JSON.parse(prompt('Paste in a GeoJSON feature') || 'null');
+						this.value = geojson;
+					} catch (error) {
+						alert('Invalid GeoJSON');
+					}
+				}
+			}
 		}
 	};
 
@@ -157,14 +176,10 @@ export default class GeoJSONInput extends GeoJSONMap {
 			} else if (event.type === 'mouseup' && this.dragRectangle) {
 				const operation = this.tool === 'add' ? union : difference;
 				this.value = this.value ? operation(this.value, this.dragRectangle) : this.dragRectangle;
-				if (!this.value && this.tool === 'subtract') {
-					this.tool = 'pan';
-				}
+				if (!this.value && this.tool === 'subtract') this.tool = 'pan';
 				this.updateLayer(this.#inputLayer, null);
-				this.updateLayer(this.#valueLayer, this.value);
 				this.inputPoints = [];
 				this.dragRectangle = null;
-				this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 			}
 		}
 	}
