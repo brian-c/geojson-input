@@ -9,9 +9,24 @@
 
 	<body>
 		<form id="form">
-			<input type="text" name="just-text" value="This is a text input.">
-			<geojson-input name="starts-empty"></geojson-input>
-			<geojson-input name="starts-with-value" value='{"type": "Feature","geometry": {"type": "Polygon","coordinates": [[[-87.98,41.61],[-87.56,41.61],[-87.56,41.98],[-87.98,41.98],[-87.98,41.61]]]}}'></geojson-input>
+			<label>
+				Text
+				<input type="text" name="just-text" value="This is a text input.">
+			</label>
+			<br>
+			<label>
+				No initial value:<br>
+				<geojson-input name="starts-empty"></geojson-input>
+			</label>
+			<label>
+				With initial value, center, and zoom:<br>
+				<geojson-input
+					name="starts-with-value"
+					value='{"type": "Feature","geometry": {"type": "Polygon","coordinates": [[[-87.98,41.61],[-87.56,41.61],[-87.56,41.98],[-87.98,41.98],[-87.98,41.61]]]}}'
+					center="-87.72,41.81"
+					zoom="9"
+				></geojson-input>
+			</label>
 		</form>
 
 		<output id="form-output" for="form"></output>

@@ -7,14 +7,26 @@ type Tool = 'pan' | 'add' | 'subtract';
 
 export default class GeoJSONInput extends GeoJSONMap {
 	static formAssociated = true;
-
 	#internals: ElementInternals;
+
 	protected toolbar: HTMLDivElement;
-	protected inputLayer: GeoJSON;
-	protected valueLayer: GeoJSON;
+
+	#inputLayer: GeoJSON;
+	#valueLayer: GeoJSON;
+
+	inputPoints = [] as [down: LatLng, moving: LatLng] | [];
+	dragRectangle = null as GeoJSON.Feature<GeoJSON.Polygon> | null;
 
 	get name(): string | undefined {
 		return this.getAttribute('name') ?? undefined;
+	}
+
+	set name(value) {
+		if (value) {
+			this.setAttribute('name', value);
+		} else {
+			this.removeAttribute('name');
+		}
 	}
 
 	get value(): GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null {
@@ -28,12 +40,11 @@ export default class GeoJSONInput extends GeoJSONMap {
 			this.#internals.setFormValue(stringValue);
 		} else {
 			this.removeAttribute('value');
+			this.#internals.setFormValue(null);
 		}
+		const subtractButton = this.toolbar.querySelector('button[name="tool"][value="subtract"]') as HTMLButtonElement;
+		subtractButton.disabled = !value;
 	}
-
-	inputPoints = [] as [down: LatLng, moving: LatLng] | [];
-
-	inputRectangle = null as GeoJSON.Feature<GeoJSON.Polygon> | null;
 
 	get tool(): Tool {
 		return (this.getAttribute('tool') as Tool) ?? 'pan';
@@ -55,7 +66,6 @@ export default class GeoJSONInput extends GeoJSONMap {
 		super();
 
 		this.#internals = this.attachInternals();
-		this.#internals.setFormValue(this.value ? JSON.stringify(this.value) : null);
 
 		this.mapContainer.insertAdjacentHTML('beforebegin', `
 			<style>${inputCss}</style>
@@ -65,6 +75,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 					<button type="button" name="zoom" value="1">Zoom in</button>
 					<button type="button" name="zoom" value="-1">Zoom out</button>
 				</div>
+
 				<div class="button-group">
 					<button type="button" name="tool" value="pan" aria-pressed="true">Pan</button>
 					<button type="button" name="tool" value="add" aria-pressed="false">Add</button>
@@ -75,27 +86,31 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 		this.toolbar = this.shadowRoot?.getElementById('toolbar') as HTMLDivElement;
 
-		this.inputLayer = new GeoJSON(undefined, {
-			style: { color: 'gray' },
+		this.#inputLayer = new GeoJSON(undefined, {
+			style: { color: 'gray', interactive: false, weight: 1 },
 		});
 
-		this.valueLayer = new GeoJSON(this.value ?? undefined);
+		this.#valueLayer = new GeoJSON(this.value ?? undefined, {
+			style: { color: 'blue', interactive: false, weight: 1 },
+		});
 	}
 
 	connectedCallback() {
 		super.connectedCallback();
 
-		this.map?.zoomControl.remove();
-		this.map?.addLayer(this.inputLayer);
-		this.map?.addLayer(this.valueLayer);
+		this.value = this.value;
 
-		this.map?.on('mousedown', this.handleMouseDown);
+		this.map?.zoomControl.remove();
+		this.map?.addLayer(this.#inputLayer);
+		this.map?.addLayer(this.#valueLayer);
+
 		this.toolbar.addEventListener('click', this.handleToolbarClick);
+		this.map?.on('mousedown', this.handleMapMouseDown);
 	}
 
 	disconnectedCallback() {
-		this.map?.off('mousedown', this.handleMouseDown);
 		this.toolbar.removeEventListener('click', this.handleToolbarClick);
+		this.map?.off('mousedown', this.handleMapMouseDown);
 
 		super.disconnectedCallback();
 	}
@@ -109,45 +124,47 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 	};
 
-	handleMouseDown: LeafletMouseEventHandlerFn = event => {
+	handleMapMouseDown: LeafletMouseEventHandlerFn = event => {
 		if (this.tool !== 'pan') {
-			this.map?.on('mousemove', this.handleMouseMove);
-			this.map?.on('mouseup', this.handleMouseUp);
-			this.handleMouseMove(event);
+			this.map?.on('mousemove', this.handlemapMouseMove);
+			this.map?.on('mouseup', this.handleMapMouseUp);
+			this.handlemapMouseMove(event);
 		}
 	};
 
-	handleMouseMove: LeafletMouseEventHandlerFn = event => {
+	handlemapMouseMove: LeafletMouseEventHandlerFn = event => {
 		event.originalEvent.preventDefault();
-		this.handleDrag(event);
+		this.processMapDragging(event);
 	};
 
-	handleMouseUp: LeafletMouseEventHandlerFn = event => {
-		this.map?.off('mousemove', this.handleMouseMove);
-		this.map?.off('mouseup', this.handleMouseUp);
-		this.handleDrag(event);
+	handleMapMouseUp: LeafletMouseEventHandlerFn = event => {
+		this.map?.off('mousemove', this.handlemapMouseMove);
+		this.map?.off('mouseup', this.handleMapMouseUp);
+		this.processMapDragging(event);
 	};
 
-	handleDrag(event: LeafletMouseEvent) {
+	processMapDragging(event: LeafletMouseEvent) {
 		if (event.type === 'mousedown') {
 			this.inputPoints = [event.latlng, event.latlng];
 		} else {
 			this.inputPoints[1] = event.latlng;
 			const lngLats = this.inputPoints.map(point => [point.lng, point.lat]);
 			const diagonal = lineString(lngLats);
-			this.inputRectangle = bboxPolygon(bbox(diagonal));
-			const operation = this.tool === 'add' ? union : difference;
-			const newValue = this.value ? operation(this.value, this.inputRectangle) : this.inputRectangle;
+			this.dragRectangle = bboxPolygon(bbox(diagonal));
 
 			if (event.type === 'mousemove') {
-				this.updateLayer(this.inputLayer, this.inputRectangle);
-			} else if (event.type === 'mouseup' && this.inputRectangle) {
+				this.updateLayer(this.#inputLayer, this.dragRectangle);
+			} else if (event.type === 'mouseup' && this.dragRectangle) {
+				const operation = this.tool === 'add' ? union : difference;
+				this.value = this.value ? operation(this.value, this.dragRectangle) : this.dragRectangle;
+				if (!this.value && this.tool === 'subtract') {
+					this.tool = 'pan';
+				}
+				this.updateLayer(this.#inputLayer, null);
+				this.updateLayer(this.#valueLayer, this.value);
 				this.inputPoints = [];
-				this.inputRectangle = null;
-				this.value = newValue;
-				this.updateLayer(this.inputLayer, null);
-				this.updateLayer(this.valueLayer, this.value);
-				this.dispatchEvent(new CustomEvent('change', { bubbles: true, detail: this.value }));
+				this.dragRectangle = null;
+				this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 			}
 		}
 	}

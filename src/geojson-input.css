@@ -16,8 +16,8 @@
 	margin: 1ch;
 }
 
-button[name="tool"][aria-pressed="true"]::after {
-	content: "✓";
+button[name="tool"][aria-pressed="true"]::before {
+	content: "▶ ";
 }
 
 :host([tool="add"]) > #map-container,

@@ -17,7 +17,13 @@ export default class GeoJSONMap extends HTMLElement {
 
 	set center(value) {
 		this.setAttribute('center', value.join(','));
-		this.map?.setView([value[1], value[0]]);
+		const mapCenter = this.map!.getCenter();
+		if (
+			Math.abs(1 - mapCenter.lng / value[0]) > 0.0001
+			|| Math.abs(1 - mapCenter.lat / value[1]) > 0.0001
+		) {
+			this.map!.setView([value[1], value[0]]);
+		}
 	}
 
 	get zoom(): number {
@@ -26,7 +32,9 @@ export default class GeoJSONMap extends HTMLElement {
 
 	set zoom(value) {
 		this.setAttribute('zoom', value.toString());
-		this.map?.setZoom(value);
+		if (1 - this.map!.getZoom() / value > 0.0001) {
+			this.map?.setZoom(value);
+		}
 	}
 
 	constructor() {
@@ -45,8 +53,18 @@ export default class GeoJSONMap extends HTMLElement {
 
 	connectedCallback() {
 		this.map = new L.Map(this.mapContainer);
+
 		this.map.addLayer(new L.TileLayer(this.tiles));
 		this.map.setView(new L.LatLng(this.center[1], this.center[0]), this.zoom);
+
+		this.map.on('zoomend', () => {
+			this.zoom = this.map!.getZoom();
+		});
+
+		this.map.on('moveend', () => {
+			const center = this.map!.getCenter();
+			this.center = [center.lng, center.lat];
+		});
 	}
 
 	disconnectedCallback() {
