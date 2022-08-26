@@ -3,8 +3,12 @@ import leafletCss from 'leaflet/dist/leaflet.css?inline';
 import mapCss from './geojson-map.css?inline';
 
 export default class GeoJSONMap extends HTMLElement {
-	protected mapContainer: HTMLDivElement;
-	protected map = null as L.Map | null;
+	static defineAs(tagName: string) {
+		if (!customElements.get(tagName)) customElements.define(tagName, this);
+	}
+
+	mapContainer: HTMLDivElement;
+	map = null as L.Map | null;
 
 	get tiles(): string {
 		return this.getAttribute('tiles') ?? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
@@ -52,6 +56,7 @@ export default class GeoJSONMap extends HTMLElement {
 	}
 
 	connectedCallback() {
+		console.log('Map connected');
 		this.map = new L.Map(this.mapContainer);
 
 		this.map.addLayer(new L.TileLayer(this.tiles));

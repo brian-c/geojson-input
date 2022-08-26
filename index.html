@@ -15,6 +15,24 @@
 			</label>
 			<br>
 			<label>
+				For dev:<br>
+				<geojson-input center="-87.72,41.81" zoom="10">
+					<geojson-input-internal-polygon-layer feature='
+						{
+							"type": "Feature",
+							"properties": {},
+							"geometry": {
+								"type": "Polygon",
+								"coordinates": [
+									[[-87.78,41.84],[-87.70,41.74],[-87.55,41.82],[-87.65,41.92],[-87.78,41.84]],
+									[[-87.66,41.88],[-87.60,41.82],[-87.70,41.78],[-87.74,41.84],[-87.66,41.88]]
+								]
+							}
+						}
+					'></geojson-input-internal-polygon-layer>
+				</geojson-input>
+			</label>
+			<!-- <label>
 				No initial value:<br>
 				<geojson-input name="starts-empty"></geojson-input>
 			</label>
@@ -26,14 +44,18 @@
 					center="-87.72,41.81"
 					zoom="9"
 				></geojson-input>
-			</label>
+			</label> -->
 		</form>
 
 		<output id="form-output" for="form"></output>
 
 		<script type="module">
 			import GeoJSONInput from './src/geojson-input.ts';
+			import CornerLayer from './src/corner-layer.ts';
+			import PolygonLayer from './src/polygon-layer.ts';
 			customElements.define('geojson-input', GeoJSONInput);
+			customElements.define('geojson-input-internal-corner-layer', CornerLayer);
+			customElements.define('geojson-input-internal-polygon-layer', PolygonLayer);
 
 			const form = document.getElementById('form');
 			const output = document.getElementById('form-output');

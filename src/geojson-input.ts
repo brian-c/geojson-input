@@ -84,6 +84,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 					<button type="button" name="tool" value="pan" aria-pressed="true">Pan</button>
 					<button type="button" name="tool" value="add" aria-pressed="false">Add</button>
 					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract</button>
+					<button type="button" name="tool" value="polygon" aria-pressed="false">+ Polygon</button>
+					<button type="button" name="tool" value="polygon" aria-pressed="false">&ndash; Polygon</button>
 				</div>
 
 				<div class="button-group">
@@ -105,6 +107,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	connectedCallback() {
 		super.connectedCallback();
+		console.log('Input connected');
 
 		this.value = this.value;
 
@@ -145,19 +148,19 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	handleMapMouseDown: LeafletMouseEventHandlerFn = event => {
 		if (this.tool !== 'pan') {
-			this.map?.on('mousemove', this.handlemapMouseMove);
+			this.map?.on('mousemove', this.handleMapMouseMove);
 			this.map?.on('mouseup', this.handleMapMouseUp);
-			this.handlemapMouseMove(event);
+			this.handleMapMouseMove(event);
 		}
 	};
 
-	handlemapMouseMove: LeafletMouseEventHandlerFn = event => {
+	handleMapMouseMove: LeafletMouseEventHandlerFn = event => {
 		event.originalEvent.preventDefault();
 		this.processMapDragging(event);
 	};
 
 	handleMapMouseUp: LeafletMouseEventHandlerFn = event => {
-		this.map?.off('mousemove', this.handlemapMouseMove);
+		this.map?.off('mousemove', this.handleMapMouseMove);
 		this.map?.off('mouseup', this.handleMapMouseUp);
 		this.processMapDragging(event);
 	};
