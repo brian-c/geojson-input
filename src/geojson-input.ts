@@ -1,21 +1,24 @@
-import { bbox, bboxPolygon, difference, lineString, union } from '@turf/turf';
+import { bbox, bboxPolygon, difference, featureCollection, lineString } from '@turf/turf';
 import { GeoJSON, LatLng, LeafletMouseEvent, LeafletMouseEventHandlerFn } from 'leaflet';
 import inputCss from './geojson-input.css?inline';
 import GeoJSONMap from './geojson-map';
+import PolygonLayer from './polygon-layer';
+
+type NonNullPolygonLayerFeature = NonNullable<InstanceType<typeof PolygonLayer>['feature']>;
 
 type Tool = 'pan' | 'add' | 'subtract';
+
+customElements.define('geojson-input-internal-polygon-layer', class extends PolygonLayer {});
 
 export default class GeoJSONInput extends GeoJSONMap {
 	static formAssociated = true;
 	#internals: ElementInternals;
 
-	protected toolbar: HTMLDivElement;
+	toolbar: HTMLDivElement;
 
 	#inputLayer: GeoJSON;
-	#valueLayer: GeoJSON;
 
 	inputPoints = [] as [down: LatLng, moving: LatLng] | [];
-	dragRectangle = null as GeoJSON.Feature<GeoJSON.Polygon> | null;
 
 	get name(): string | undefined {
 		return this.getAttribute('name') ?? undefined;
@@ -29,8 +32,18 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 	}
 
-	get value(): GeoJSON.Feature<GeoJSON.MultiPolygon | GeoJSON.Polygon> | null {
-		return JSON.parse(this.getAttribute('value') ?? 'null');
+	get value(): GeoJSON.Feature | GeoJSON.FeatureCollection | null {
+		const features = this.descendantPolygons
+			.map(polygon => polygon.feature)
+			.filter(Boolean) as NonNullPolygonLayerFeature[];
+
+		if (features.length === 0) {
+			return null;
+		} else if (features.length === 1) {
+			return features[0];
+		} else {
+			return featureCollection(features);
+		}
 	}
 
 	set value(value) {
@@ -43,10 +56,9 @@ export default class GeoJSONInput extends GeoJSONMap {
 			this.#internals.setFormValue(null);
 		}
 
-		const subtractButton = this.toolbar.querySelector('button[name="tool"][value="subtract"]') as HTMLButtonElement;
-		subtractButton.disabled = !value;
+		// const subtractButton = this.toolbar.querySelector('button[name="tool"][value="subtract"]') as HTMLButtonElement;
+		// subtractButton.disabled = !value;
 
-		this.updateLayer(this.#valueLayer, value);
 		this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 	}
 
@@ -56,8 +68,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	set tool(value) {
 		const panAndZoomToggle = value === 'pan' ? 'enable' : 'disable';
-		this.map?.dragging[panAndZoomToggle]();
-		this.map?.boxZoom[panAndZoomToggle]();
+		this.map.dragging[panAndZoomToggle]();
+		this.map.boxZoom[panAndZoomToggle]();
 
 		this.toolbar.querySelectorAll('button[name="tool"]').forEach(button => {
 			button.ariaPressed = String((button as HTMLButtonElement).value === value);
@@ -66,12 +78,19 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.setAttribute('tool', value);
 	}
 
+	get descendantPolygons(): PolygonLayer[] {
+		const descendants = [...this.querySelectorAll('*'), ...this.shadowRoot!.querySelectorAll('*')];
+		return descendants.filter(element => element instanceof PolygonLayer) as PolygonLayer[];
+	}
+
 	constructor() {
 		super();
 
 		this.#internals = this.attachInternals();
 
-		this.mapContainer.insertAdjacentHTML('beforebegin', `
+		this.map.zoomControl.remove();
+
+		this.map.getContainer().insertAdjacentHTML('beforebegin', `
 			<style>${inputCss}</style>
 
 			<div id="toolbar">
@@ -84,8 +103,6 @@ export default class GeoJSONInput extends GeoJSONMap {
 					<button type="button" name="tool" value="pan" aria-pressed="true">Pan</button>
 					<button type="button" name="tool" value="add" aria-pressed="false">Add</button>
 					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract</button>
-					<button type="button" name="tool" value="polygon" aria-pressed="false">+ Polygon</button>
-					<button type="button" name="tool" value="polygon" aria-pressed="false">&ndash; Polygon</button>
 				</div>
 
 				<div class="button-group">
@@ -100,9 +117,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 			style: { color: 'gray', interactive: false, weight: 1 },
 		});
 
-		this.#valueLayer = new GeoJSON(this.value ?? undefined, {
-			style: { color: 'blue', interactive: false, weight: 1 },
-		});
+		this.map.addLayer(this.#inputLayer);
+
 	}
 
 	connectedCallback() {
@@ -111,17 +127,13 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 		this.value = this.value;
 
-		this.map?.zoomControl.remove();
-		this.map?.addLayer(this.#inputLayer);
-		this.map?.addLayer(this.#valueLayer);
-
 		this.toolbar.addEventListener('click', this.handleToolbarClick);
-		this.map?.on('mousedown', this.handleMapMouseDown);
+		this.map.on('mousedown', this.handleMapMouseDown);
 	}
 
 	disconnectedCallback() {
 		this.toolbar.removeEventListener('click', this.handleToolbarClick);
-		this.map?.off('mousedown', this.handleMapMouseDown);
+		this.map.off('mousedown', this.handleMapMouseDown);
 
 		super.disconnectedCallback();
 	}
@@ -130,7 +142,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		const button = (event.target as typeof this.toolbar).closest('button');
 		if (button instanceof HTMLButtonElement) {
 			if (button.name === 'zoom') {
-				this.map?.zoomIn(parseFloat(button.value));
+				this.map.zoomIn(parseFloat(button.value));
 			} else if (button.name === 'tool') {
 				this.tool = button.value as Tool;
 			} else if (button.name === 'import') {
@@ -147,9 +159,10 @@ export default class GeoJSONInput extends GeoJSONMap {
 	};
 
 	handleMapMouseDown: LeafletMouseEventHandlerFn = event => {
+		if (event.originalEvent.defaultPrevented) return;
 		if (this.tool !== 'pan') {
-			this.map?.on('mousemove', this.handleMapMouseMove);
-			this.map?.on('mouseup', this.handleMapMouseUp);
+			this.map.on('mousemove', this.handleMapMouseMove);
+			this.map.on('mouseup', this.handleMapMouseUp);
 			this.handleMapMouseMove(event);
 		}
 	};
@@ -160,8 +173,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 	};
 
 	handleMapMouseUp: LeafletMouseEventHandlerFn = event => {
-		this.map?.off('mousemove', this.handleMapMouseMove);
-		this.map?.off('mouseup', this.handleMapMouseUp);
+		this.map.off('mousemove', this.handleMapMouseMove);
+		this.map.off('mouseup', this.handleMapMouseUp);
 		this.processMapDragging(event);
 	};
 
@@ -172,23 +185,39 @@ export default class GeoJSONInput extends GeoJSONMap {
 			this.inputPoints[1] = event.latlng;
 			const lngLats = this.inputPoints.map(point => [point.lng, point.lat]);
 			const diagonal = lineString(lngLats);
-			this.dragRectangle = bboxPolygon(bbox(diagonal));
+			const rectangle = bboxPolygon(bbox(diagonal));
 
 			if (event.type === 'mousemove') {
-				this.updateLayer(this.#inputLayer, this.dragRectangle);
-			} else if (event.type === 'mouseup' && this.dragRectangle) {
-				const operation = this.tool === 'add' ? union : difference;
-				this.value = this.value ? operation(this.value, this.dragRectangle) : this.dragRectangle;
-				if (!this.value && this.tool === 'subtract') this.tool = 'pan';
-				this.updateLayer(this.#inputLayer, null);
+				this.updateInputLayer(this.#inputLayer, rectangle);
+			} else if (event.type === 'mouseup' && rectangle) {
+				this.updateInputLayer(this.#inputLayer, null);
+				this.applyInput(rectangle, this.tool);
 				this.inputPoints = [];
-				this.dragRectangle = null;
 			}
 		}
 	}
 
-	updateLayer(layer: GeoJSON, data: GeoJSON.Feature | null) {
+	updateInputLayer(layer: GeoJSON, data: GeoJSON.Feature | null) {
 		layer.clearLayers();
 		if (data) layer.addData(data);
+	}
+
+	applyInput(rectangle: GeoJSON.Feature<GeoJSON.Polygon>, tool: Tool) {
+		if (tool === 'add') {
+			const newPolygon = new PolygonLayer();
+			newPolygon.feature = rectangle;
+			this.shadowRoot!.append(newPolygon);
+		} else if (tool === 'subtract') {
+			for (const polygon of this.descendantPolygons) {
+				if (polygon.feature) {
+					const subtracted = difference(polygon.feature, rectangle);
+					if (subtracted) {
+						polygon.feature = subtracted;
+					} else {
+						polygon.remove();
+					}
+				}
+			}
+		}
 	}
 }

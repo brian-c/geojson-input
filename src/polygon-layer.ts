@@ -1,86 +1,133 @@
 import { coordEach } from '@turf/meta';
-import { GeoJSON } from 'leaflet';
-import CornerLayer from './corner-layer';
-import MapLayer from './map-layer';
+import { CircleMarker, FeatureGroup, LeafletMouseEvent, LeafletMouseEventHandlerFn } from 'leaflet';
+import GeoJSONLayer from './geojson-layer';
 
-export default class PolygonLayer extends MapLayer {
-	get feature(): GeoJSON.Polygon {
-		return JSON.parse(this.getAttribute('feature') ?? '{}');
+const cornerIndexStrings = new WeakMap<CircleMarker, string>();
+const cornerGeometryIndices = new WeakMap<CircleMarker, number>();
+
+export default class PolygonLayer extends GeoJSONLayer {
+	get feature(): GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> {
+		return super.feature as GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 	}
 
-	set feature(feature) {
-		this.setAttribute('feature', JSON.stringify(feature));
+	set feature(value) {
+		super.feature = value;
+		this.syncCorners();
+	}
 
-		this.#polygon.clearLayers();
-		this.#polygon.addData(this.feature);
-		this.#polygon.bringToBack();
+	get selected() {
+		return super.selected;
+	}
 
-		let cornerCount = 0;
-
-		let lastGi = -1;
-		let lastCorner: CornerLayer;
-		coordEach(this.feature, (coord, i, fi, mfi, gi) => {
-			if (gi !== lastGi) lastCorner?.hide();
-			let corner = this.shadowRoot!.children[i] as CornerLayer | undefined;
-
-			if (!corner) {
-				corner = new CornerLayer();
-				this.shadowRoot!.append(corner);
-			}
-
-			const coordId = [i, fi, mfi, gi].join('/');
-			corner.coordinateId = coordId;
-			corner.lng = coord[0];
-			corner.lat = coord[1];
-			corner.dataset.gi = gi.toString();
-
-			cornerCount += 1;
-
-			lastCorner = corner;
-			lastGi = gi;
-		});
-
-		lastCorner!.hide();
-
-		while (this.shadowRoot!.children.length > cornerCount) {
-			this.shadowRoot!.children[this.shadowRoot!.children.length - 1].remove();
+	set selected(value) {
+		super.selected = value;
+		if (value) {
+			this.map.addLayer(this.corners);
+		} else {
+			this.corners.remove();
 		}
 	}
 
-	#polygon: GeoJSON;
-	get _polygon() { return this.#polygon; }
+	corners: FeatureGroup;
+	selectedCorners: CircleMarker[] = [];
+	lastDragEvent: LeafletMouseEvent | null = null;
 
 	constructor() {
 		super();
-		this.attachShadow({ mode: 'open' });
-		this.#polygon = new GeoJSON(undefined, { style: { color: 'gray' } });
+		this.corners = new FeatureGroup();
 	}
 
 	connectedCallback() {
+		super.connectedCallback();
 		console.log('Polygon connected');
-		this.shadowRoot!.addEventListener('corner-move', this.handleCornerMove);
-		this.map.addLayer(this.#polygon);
+		this.corners.on('mousedown', this.handleCornerDragStart);
 		this.feature = this.feature;
+		this.selected = this.selected;
 	}
 
 	disconnectedCallback() {
-		this.shadowRoot!.removeEventListener('corner-move', this.handleCornerMove);
-		this.map.removeLayer(this.#polygon);
+		this.corners.off();
 	}
 
-	handleCornerMove: EventListener = event => {
+	syncCorners() {
+		let cornerCount = 0;
+
+		let priorGi: number;
+		let priorCorner: CircleMarker;
+
+		const cornerLayers = this.corners.getLayers();
+
+		coordEach(this.feature, (coord, i, fi, mfi, gi) => {
+			if (gi !== priorGi && priorCorner) {
+				priorCorner.remove();
+			}
+
+			let corner = cornerLayers[i] as CircleMarker;
+
+			if (!corner) {
+				corner = new CircleMarker([coord[1], coord[0]], { radius: 5 });
+				this.corners.addLayer(corner);
+			} else {
+				corner.setLatLng([coord[1], coord[0]]);
+			}
+
+			corner.bringToFront();
+			corner.setStyle({ color: this.color });
+			cornerIndexStrings.set(corner, [i, fi, mfi, gi].join('/'));
+			cornerGeometryIndices.set(corner, gi);
+
+			cornerCount += 1;
+
+			priorCorner = corner;
+			priorGi = gi;
+		});
+
+		if (priorCorner!) {
+			priorCorner.remove();
+		}
+
+		const extraLayers = cornerLayers.slice(cornerCount);
+		extraLayers.forEach(extraLayer => {
+			this.corners.removeLayer(extraLayer);
+		});
+	}
+
+	handleCornerDragStart: LeafletMouseEventHandlerFn = event => {
+		event.originalEvent.preventDefault();
 		this.map.dragging.disable();
+		this.selectedCorners = [event.sourceTarget];
+		this.map.on('mousemove', this.handleCornerDragMove);
+		addEventListener('mouseup', this.handleCornerDragRelease);
+	}
 
-		const corner = event.target as CornerLayer;
-		const feature = this.feature;
+	handleCornerDragMove: LeafletMouseEventHandlerFn = event => {
+		if (this.lastDragEvent) {
+			const latDelta = event.latlng.lat - this.lastDragEvent!.latlng.lat;
+			const lngDelta = event.latlng.lng - this.lastDragEvent!.latlng.lng;
+			for (const corner of this.selectedCorners) {
+				const cornerLatlng = corner.getLatLng();
+				corner.setLatLng([cornerLatlng.lat + latDelta, cornerLatlng.lng + lngDelta]);
+				this.updateFeatureCorner(corner);
+			}
+		}
+		this.lastDragEvent = event;
+	}
 
-		const targetCoords = [corner.coordinateId];
+	handleCornerDragRelease: EventListener = () => {
+		this.lastDragEvent = null;
+		this.map.off('mousemove', this.handleCornerDragMove);
+		removeEventListener('mouseup', this.handleCornerDragRelease);
+		this.map.dragging.enable();
+	}
 
-		const geometryId = parseFloat(corner.dataset.gi!);
+	updateFeatureCorner(corner: CircleMarker) {
+		const targetCoords = [cornerIndexStrings.get(corner)!];
+
+		const geometryIndex = cornerGeometryIndices.get(corner);
 		const geometryCoords: string[] = [];
-		coordEach(feature, (_coord, i, fi, mfi, gi) => {
-			const id = [i, fi, mfi, gi].join('/');
-			if (gi === geometryId) geometryCoords.push(id);
+		coordEach(this.feature, (_coord, i, fi, mfi, gi) => {
+			const indexString = [i, fi, mfi, gi].join('/');
+			if (gi === geometryIndex) geometryCoords.push(indexString);
 		});
 
 		if (geometryCoords.indexOf(targetCoords[0]) === 0) {
@@ -89,15 +136,16 @@ export default class PolygonLayer extends MapLayer {
 			targetCoords.push(geometryCoords[0]);
 		}
 
-		coordEach(feature, (coord, i, fi, mfi, gi) => {
-			const id = [i, fi, mfi, gi].join('/');
-			if (targetCoords.includes(id)) {
-				coord[0] = (event as CustomEvent).detail.lng;
-				coord[1] = (event as CustomEvent).detail.lat;
+		const feature = this.feature;
+		const cornerLatlng = corner.getLatLng();
+		coordEach(feature, (coord, ...indices) => {
+			const indexString = indices.join('/');
+			if (targetCoords.includes(indexString)) {
+				coord[0] = cornerLatlng.lng;
+				coord[1] = cornerLatlng.lat;
 			}
 		});
-		this.feature = feature;
 
-		this.map.dragging.enable();
+		this.feature = feature;
 	};
 }

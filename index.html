@@ -17,7 +17,7 @@
 			<label>
 				For dev:<br>
 				<geojson-input center="-87.72,41.81" zoom="10">
-					<geojson-input-internal-polygon-layer feature='
+					<geojson-input-polygon color="green" feature='
 						{
 							"type": "Feature",
 							"properties": {},
@@ -29,7 +29,7 @@
 								]
 							}
 						}
-					'></geojson-input-internal-polygon-layer>
+					'></geojson-input-polygon>
 				</geojson-input>
 			</label>
 			<!-- <label>
@@ -51,11 +51,9 @@
 
 		<script type="module">
 			import GeoJSONInput from './src/geojson-input.ts';
-			import CornerLayer from './src/corner-layer.ts';
 			import PolygonLayer from './src/polygon-layer.ts';
 			customElements.define('geojson-input', GeoJSONInput);
-			customElements.define('geojson-input-internal-corner-layer', CornerLayer);
-			customElements.define('geojson-input-internal-polygon-layer', PolygonLayer);
+			customElements.define('geojson-input-polygon', PolygonLayer);
 
 			const form = document.getElementById('form');
 			const output = document.getElementById('form-output');
