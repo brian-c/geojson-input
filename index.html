@@ -15,9 +15,12 @@
 			</label>
 			<br>
 			<label>
-				For dev:<br>
-				<geojson-input center="-87.72,41.81" zoom="10">
-					<geojson-input-polygon color="green" feature='
+				GeoJSON:<br>
+				<geojson-input
+					name="geojson"
+					center="-87.72,41.81"
+					zoom="10"
+					value='
 						{
 							"type": "Feature",
 							"properties": {},
@@ -29,31 +32,17 @@
 								]
 							}
 						}
-					'></geojson-input-polygon>
+					'
+				>
 				</geojson-input>
 			</label>
-			<!-- <label>
-				No initial value:<br>
-				<geojson-input name="starts-empty"></geojson-input>
-			</label>
-			<label>
-				With initial value, center, and zoom:<br>
-				<geojson-input
-					name="starts-with-value"
-					value='{"type": "Feature","geometry": {"type": "Polygon","coordinates": [[[-87.98,41.61],[-87.56,41.61],[-87.56,41.98],[-87.98,41.98],[-87.98,41.61]]]}}'
-					center="-87.72,41.81"
-					zoom="9"
-				></geojson-input>
-			</label> -->
 		</form>
 
 		<output id="form-output" for="form"></output>
 
 		<script type="module">
 			import GeoJSONInput from './src/geojson-input.ts';
-			import PolygonLayer from './src/polygon-layer.ts';
 			customElements.define('geojson-input', GeoJSONInput);
-			customElements.define('geojson-input-polygon', PolygonLayer);
 
 			const form = document.getElementById('form');
 			const output = document.getElementById('form-output');

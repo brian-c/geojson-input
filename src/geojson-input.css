@@ -13,11 +13,41 @@
 .button-group {
 	display: flex;
 	flex-direction: column;
-	margin: 1ch;
+	margin: 2vw;
 }
 
-button[name="tool"][aria-pressed="true"]::before {
-	content: "▶ ";
+button {
+	appearance: none;
+	background: white;
+	border: 2px solid black;
+	color: black;
+	filter: drop-shadow(1px 2px #0006);
+	font-weight: bold;
+	padding: 0.5ch 1.5ch;
+}
+
+button:first-child {
+	border-start-end-radius: 1ch;
+	border-start-start-radius: 1ch;
+}
+
+button:last-child {
+	border-end-end-radius: 1ch;
+	border-end-start-radius: 1ch;
+}
+
+button:not(:first-child) {
+	border-top: 0;
+}
+
+button:active {
+	background: black;
+	color: white;
+}
+
+button[name="tool"][aria-pressed="true"] {
+	background: royalblue;
+	color: white;
 }
 
 :host([tool="add"]) > #map-container,

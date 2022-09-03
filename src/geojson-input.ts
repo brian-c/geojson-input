@@ -1,24 +1,26 @@
-import { bbox, bboxPolygon, difference, featureCollection, lineString } from '@turf/turf';
-import { GeoJSON, LatLng, LeafletMouseEvent, LeafletMouseEventHandlerFn } from 'leaflet';
-import inputCss from './geojson-input.css?inline';
+import { difference, getCoords } from '@turf/turf';
+import { FeatureGroup, GeoJSON, LatLng, LatLngBounds, LeafletKeyboardEventHandlerFn, LeafletMouseEvent, LeafletMouseEventHandlerFn, Rectangle } from 'leaflet';
+import { CornerMarker, EditablePolygon } from './editable-polygon';
+import inputCss from './geojson-input.css';
 import GeoJSONMap from './geojson-map';
-import PolygonLayer from './polygon-layer';
 
-type NonNullPolygonLayerFeature = NonNullable<InstanceType<typeof PolygonLayer>['feature']>;
+type Value = GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>
+	| GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 
-type Tool = 'pan' | 'add' | 'subtract';
-
-customElements.define('geojson-input-internal-polygon-layer', class extends PolygonLayer {});
+	type Tool = 'pan' | 'select' | 'add' | 'subtract';
 
 export default class GeoJSONInput extends GeoJSONMap {
 	static formAssociated = true;
-	#internals: ElementInternals;
+	internals: ElementInternals;
 
 	toolbar: HTMLDivElement;
+	toolWithoutKey: Tool | null = null;
+	keysDown = new Set<KeyboardEvent['key']>();
 
-	#inputLayer: GeoJSON;
-
-	inputPoints = [] as [down: LatLng, moving: LatLng] | [];
+	inputStart: LeafletMouseEvent | null = null;
+	inputDragCoords: LatLng | null = null;
+	inputRect = new Rectangle([[0, 0], [0, 0]], { color: 'gray', interactive: false });
+	valuePolygons = new FeatureGroup<EditablePolygon>();
 
 	get name(): string | undefined {
 		return this.getAttribute('name') ?? undefined;
@@ -32,38 +34,28 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 	}
 
-	get value(): GeoJSON.Feature | GeoJSON.FeatureCollection | null {
-		const features = this.descendantPolygons
-			.map(polygon => polygon.feature)
-			.filter(Boolean) as NonNullPolygonLayerFeature[];
-
-		if (features.length === 0) {
-			return null;
-		} else if (features.length === 1) {
-			return features[0];
-		} else {
-			return featureCollection(features);
-		}
+	get value(): Value | null {
+		return JSON.parse(this.getAttribute('value') ?? 'null');
 	}
 
 	set value(value) {
-		if (value) {
-			const stringValue = JSON.stringify(value);
-			this.setAttribute('value', stringValue);
-			this.#internals.setFormValue(stringValue);
-		} else {
-			this.removeAttribute('value');
-			this.#internals.setFormValue(null);
+		const stringValue = JSON.stringify(value);
+		if (this.getAttribute('value') !== stringValue) {
+			this.valuePolygons.clearLayers();
+			if (value) {
+				const polygons = this.featureToPolygons(value);
+				polygons.forEach(p => this.valuePolygons.addLayer(p));
+				this.setAttribute('value', stringValue);
+			} else {
+				this.removeAttribute('value');
+			}
 		}
-
-		// const subtractButton = this.toolbar.querySelector('button[name="tool"][value="subtract"]') as HTMLButtonElement;
-		// subtractButton.disabled = !value;
-
+		this.internals.setFormValue(this.getAttribute('value') ?? null);
 		this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 	}
 
 	get tool(): Tool {
-		return (this.getAttribute('tool') as Tool) ?? 'pan';
+		return this.getAttribute('tool') as Tool ?? 'pan';
 	}
 
 	set tool(value) {
@@ -71,22 +63,28 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.map.dragging[panAndZoomToggle]();
 		this.map.boxZoom[panAndZoomToggle]();
 
-		this.toolbar.querySelectorAll('button[name="tool"]').forEach(button => {
-			button.ariaPressed = String((button as HTMLButtonElement).value === value);
+		this.inputRect.setStyle({
+			dashArray: value === 'select' ? [4, 8] : undefined,
+			fill: value !== 'select',
 		});
+
+		const buttons: NodeListOf<HTMLButtonElement> = this.toolbar.querySelectorAll('button[name="tool"]');
+		for (const button of buttons) {
+			button.ariaPressed = String(button.value === value);
+		}
 
 		this.setAttribute('tool', value);
 	}
 
-	get descendantPolygons(): PolygonLayer[] {
-		const descendants = [...this.querySelectorAll('*'), ...this.shadowRoot!.querySelectorAll('*')];
-		return descendants.filter(element => element instanceof PolygonLayer) as PolygonLayer[];
+	get selectedCorners() {
+		const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
+		const allCorners = polygons.map(p => p.corners.getLayers()).flat() as CornerMarker[];
+		return allCorners.filter(c => c.selected);
 	}
 
 	constructor() {
 		super();
-
-		this.#internals = this.attachInternals();
+		this.internals = this.attachInternals();
 
 		this.map.zoomControl.remove();
 
@@ -95,47 +93,59 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 			<div id="toolbar">
 				<div class="button-group">
-					<button type="button" name="zoom" value="1">Zoom in</button>
-					<button type="button" name="zoom" value="-1">Zoom out</button>
+					<button type="button" name="zoom" value="1"><big>+</big></button>
+					<button type="button" name="zoom" value="-1"><big>&ndash;</big></button>
 				</div>
 
 				<div class="button-group">
-					<button type="button" name="tool" value="pan" aria-pressed="true">Pan</button>
-					<button type="button" name="tool" value="add" aria-pressed="false">Add</button>
-					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract</button>
+					<button type="button" name="tool" value="pan" aria-pressed="true">Pan ␣</button>
+					<button type="button" name="tool" value="add" aria-pressed="false">Add ⇧</button>
+					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract ⌥</button>
+					<button type="button" name="tool" value="select" aria-pressed="false">Select ⌘</button>
 				</div>
 
 				<div class="button-group">
-					<button type="button" name="import" value="geojson" aria-pressed="true">GeoJSON</button>
+					<button type="button" name="import" value="geojson" aria-pressed="true">GeoJSON…</button>
 				</div>
 			</div>
 		`);
 
 		this.toolbar = this.shadowRoot?.getElementById('toolbar') as HTMLDivElement;
 
-		this.#inputLayer = new GeoJSON(undefined, {
-			style: { color: 'gray', interactive: false, weight: 1 },
-		});
-
-		this.map.addLayer(this.#inputLayer);
-
+		this.map.addLayer(this.valuePolygons);
 	}
 
 	connectedCallback() {
 		super.connectedCallback();
-		console.log('Input connected');
-
-		this.value = this.value;
-
+		addEventListener('keydown', this.handleGlobalKeyboardEvent);
+		addEventListener('keyup', this.handleGlobalKeyboardEvent);
 		this.toolbar.addEventListener('click', this.handleToolbarClick);
 		this.map.on('mousedown', this.handleMapMouseDown);
+		this.map.on('keydown', this.handleMapKeydown);
+		this.value = this.value;
 	}
 
 	disconnectedCallback() {
+		removeEventListener('keydown', this.handleGlobalKeyboardEvent);
+		removeEventListener('keyup', this.handleGlobalKeyboardEvent);
 		this.toolbar.removeEventListener('click', this.handleToolbarClick);
 		this.map.off('mousedown', this.handleMapMouseDown);
-
+		this.map.off('keydown', this.handleMapKeydown);
 		super.disconnectedCallback();
+	}
+
+	handleGlobalKeyboardEvent = (event: KeyboardEvent) => {
+		this.toolWithoutKey ??= this.tool;
+		const addOrDelete = event.type === 'keydown' ? 'add' : 'delete';
+		this.keysDown[addOrDelete](event.key);
+		if (this.keysDown.has(' ')) this.tool = 'pan';
+		if (this.keysDown.has('Meta')) this.tool = 'select';
+		if (this.keysDown.has('Shift') && this.tool !== 'select') this.tool = 'add';
+		if (this.keysDown.has('Alt')) this.tool = 'subtract';
+		if (this.keysDown.size === 0) {
+			this.tool = this.toolWithoutKey;
+			this.toolWithoutKey = null;
+		}
 	}
 
 	handleToolbarClick = (event: MouseEvent) => {
@@ -147,12 +157,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 				this.tool = button.value as Tool;
 			} else if (button.name === 'import') {
 				if (button.value === 'geojson') {
-					try {
-						const geojson = JSON.parse(prompt('Paste in a GeoJSON feature') || 'null');
-						this.value = geojson;
-					} catch (error) {
-						alert('Invalid GeoJSON');
-					}
+					this.importGeoJSON();
 				}
 			}
 		}
@@ -160,64 +165,180 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	handleMapMouseDown: LeafletMouseEventHandlerFn = event => {
 		if (event.originalEvent.defaultPrevented) return;
-		if (this.tool !== 'pan') {
-			this.map.on('mousemove', this.handleMapMouseMove);
-			this.map.on('mouseup', this.handleMapMouseUp);
-			this.handleMapMouseMove(event);
-		}
-	};
-
-	handleMapMouseMove: LeafletMouseEventHandlerFn = event => {
 		event.originalEvent.preventDefault();
-		this.processMapDragging(event);
-	};
 
-	handleMapMouseUp: LeafletMouseEventHandlerFn = event => {
-		this.map.off('mousemove', this.handleMapMouseMove);
-		this.map.off('mouseup', this.handleMapMouseUp);
-		this.processMapDragging(event);
-	};
+		this.inputStart = event;
+		this.inputDragCoords = null;
 
-	processMapDragging(event: LeafletMouseEvent) {
-		if (event.type === 'mousedown') {
-			this.inputPoints = [event.latlng, event.latlng];
-		} else {
-			this.inputPoints[1] = event.latlng;
-			const lngLats = this.inputPoints.map(point => [point.lng, point.lat]);
-			const diagonal = lineString(lngLats);
-			const rectangle = bboxPolygon(bbox(diagonal));
+		const fromPolygon = event.sourceTarget instanceof EditablePolygon && !['select', 'subtract'].includes(this.tool);
+		const fromCorner = event.sourceTarget instanceof CornerMarker;
 
-			if (event.type === 'mousemove') {
-				this.updateInputLayer(this.#inputLayer, rectangle);
-			} else if (event.type === 'mouseup' && rectangle) {
-				this.updateInputLayer(this.#inputLayer, null);
-				this.applyInput(rectangle, this.tool);
-				this.inputPoints = [];
+		if (fromPolygon) {
+			const polygonCorners = event.sourceTarget.corners.getLayers() as CornerMarker[];
+			const selectingPolygon = !polygonCorners.every(c => this.selectedCorners.includes(c));
+			this.selectedCorners.forEach(c => c.selected = false);
+			polygonCorners.forEach(c => c.selected = true);
+			if (selectingPolygon) {
+				this.inputDragCoords = event.latlng;
 			}
 		}
-	}
 
-	updateInputLayer(layer: GeoJSON, data: GeoJSON.Feature | null) {
-		layer.clearLayers();
-		if (data) layer.addData(data);
-	}
-
-	applyInput(rectangle: GeoJSON.Feature<GeoJSON.Polygon>, tool: Tool) {
-		if (tool === 'add') {
-			const newPolygon = new PolygonLayer();
-			newPolygon.feature = rectangle;
-			this.shadowRoot!.append(newPolygon);
-		} else if (tool === 'subtract') {
-			for (const polygon of this.descendantPolygons) {
-				if (polygon.feature) {
-					const subtracted = difference(polygon.feature, rectangle);
-					if (subtracted) {
-						polygon.feature = subtracted;
-					} else {
-						polygon.remove();
-					}
+		if (fromCorner) {
+			const alreadySelected = this.selectedCorners.includes(event.sourceTarget);
+			if (!alreadySelected && !event.originalEvent.shiftKey) {
+				this.selectedCorners.forEach(c => c.selected = false);
+			}
+			event.sourceTarget.selected = true;
+			if (event.originalEvent.shiftKey) {
+				this.inputDragCoords = event.latlng;
+				if (alreadySelected) {
+					event.sourceTarget.selected = false;
+					return;
 				}
 			}
 		}
+
+		const fromSelectedCorner = fromCorner && this.selectedCorners.includes(event.sourceTarget);
+
+		if (fromPolygon || fromSelectedCorner) {
+			this.map.dragging.disable();
+			addEventListener('pointermove', this.handleCornerDrag);
+			addEventListener('pointerup', this.handleCornerRelease);
+		} else if (this.tool !== 'pan') {
+			addEventListener('pointermove', this.handleMapDrag);
+			addEventListener('pointerup', this.handleMapRelease);
+		}
+	};
+
+	handleCornerDrag = (event: PointerEvent) => {
+		const latlng = this.map.mouseEventToLatLng(event);
+		if (this.inputDragCoords) {
+			const latDelta = latlng.lat - this.inputDragCoords.lat;
+			const lngDelta = latlng.lng - this.inputDragCoords.lng;
+			this.selectedCorners.forEach(corner => {
+				const cornerLatlng = corner.getLatLng();
+				corner.setLatLng([cornerLatlng.lat + latDelta, cornerLatlng.lng + lngDelta]);
+			});
+		}
+		this.inputDragCoords = latlng;
+	}
+
+	handleCornerRelease = () => {
+		removeEventListener('pointermove', this.handleCornerDrag);
+		removeEventListener('pointerup', this.handleCornerRelease);
+		this.tool = this.tool;
+
+		const fromPolygon = this.inputStart?.sourceTarget instanceof EditablePolygon;
+		if (fromPolygon && !this.inputDragCoords) {
+			this.selectedCorners.forEach(c => c.selected = false);
+		}
+
+		this.syncValue();
+	}
+
+	handleMapDrag = (event: PointerEvent) => {
+		if (!this.inputStart) return;
+		if (!this.map.hasLayer(this.inputRect)) {
+			this.map.addLayer(this.inputRect);
+		}
+		const latlng = this.map.mouseEventToLatLng(event);
+		this.inputRect.setBounds(new LatLngBounds(this.inputStart.latlng, latlng));
+
+		if (this.tool === 'select') {
+			if (!event.shiftKey) {
+				this.selectedCorners.forEach(c => c.selected = false);
+			}
+			this.map.eachLayer(layer => {
+				if (layer instanceof CornerMarker) {
+					const contained = this.inputRect.getBounds().contains(layer.getLatLng());
+					if (contained) {
+						layer.selected = true;
+					}
+				}
+			});
+		}
+	};
+
+	handleMapRelease = () => {
+		removeEventListener('pointermove', this.handleMapDrag);
+		removeEventListener('pointerup', this.handleMapRelease);
+		this.inputRect.remove();
+
+		if (this.tool === 'add') {
+			const latLngs = this.inputRect.getLatLngs();
+			const newPolygon = new EditablePolygon(latLngs);
+			this.valuePolygons.addLayer(newPolygon);
+		}
+
+		if (this.tool === 'subtract') {
+			const inputFeature = this.inputRect.toGeoJSON();
+			const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
+			polygons.forEach(polygon => {
+				this.valuePolygons.removeLayer(polygon);
+				const valueFeature = polygon.toGeoJSON();
+				const result = difference(valueFeature, inputFeature);
+				if (result) {
+					const newPolygons = this.featureToPolygons(result);
+					newPolygons.forEach(p => this.valuePolygons.addLayer(p));
+				} else {
+					this.valuePolygons.removeLayer(polygon);
+				}
+			});
+		}
+
+		this.syncValue();
+	};
+
+	handleMapKeydown: LeafletKeyboardEventHandlerFn = event => {
+		if (['Backspace', 'Delete'].includes(event.originalEvent.key)) {
+			const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
+			polygons.forEach(polygon => {
+				this.selectedCorners.forEach(c => polygon.removeCorner(c));
+				if (polygon.corners.getLayers().length < 3) {
+					this.valuePolygons.removeLayer(polygon);
+				}
+			});
+			this.syncValue();
+		}
+	}
+
+	importGeoJSON() {
+		try {
+			const geojson = prompt('Paste in a GeoJSON feature')?.trim();
+			if (geojson) this.value = JSON.parse(geojson);
+		} catch (error) {
+			alert('Invalid GeoJSON');
+		}
+	}
+
+	featureToPolygons(feature: Value): EditablePolygon[] {
+		if (feature.type === 'FeatureCollection') {
+			return feature.features.map(f => this.featureToPolygons(f)).flat();
+		}
+		const coords = getCoords<GeoJSON.Polygon | GeoJSON.MultiPolygon>(feature);
+		try {
+			const latLngs = GeoJSON.coordsToLatLngs(coords, 1);
+			return [new EditablePolygon(latLngs)];
+		} catch (_error) {
+			return coords.map(part => {
+				const latLngs = GeoJSON.coordsToLatLngs(part, 1);
+				return new EditablePolygon(latLngs);
+			});
+		}
+	}
+
+	syncValue() {
+		let value: typeof this.value = this.valuePolygons.toGeoJSON() as GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
+		if (value.features.length === 0) {
+			value = null;
+		} else if (value.features.length === 1) {
+			value = value.features[0];
+		}
+		if (value) {
+			// Pre-set the attribute to avoid redrawing.
+			const stringValue = JSON.stringify(value);
+			this.setAttribute('value', stringValue);
+		}
+		this.value = value;
 	}
 }
