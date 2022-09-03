@@ -12,6 +12,7 @@
 
 .button-group {
 	display: flex;
+	filter: drop-shadow(1px 2px #0006);
 	flex-direction: column;
 	margin: 2vw;
 }
@@ -21,8 +22,8 @@ button {
 	background: white;
 	border: 2px solid black;
 	color: black;
-	filter: drop-shadow(1px 2px #0006);
 	font-weight: bold;
+	margin: 0;
 	padding: 0.5ch 1.5ch;
 }
 
@@ -48,6 +49,15 @@ button:active {
 button[name="tool"][aria-pressed="true"] {
 	background: royalblue;
 	color: white;
+}
+
+button[name="tool"] {
+	display: flex;
+	justify-content: space-between;
+}
+
+button[name="tool"] > :not(:first-child) {
+	margin-inline-start: 1ch;
 }
 
 :host([tool="add"]) > #map-container,

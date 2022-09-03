@@ -70,7 +70,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 		const buttons: NodeListOf<HTMLButtonElement> = this.toolbar.querySelectorAll('button[name="tool"]');
 		for (const button of buttons) {
-			button.ariaPressed = String(button.value === value);
+			button.setAttribute('aria-pressed', String(button.value === value));
 		}
 
 		this.setAttribute('tool', value);
@@ -98,10 +98,22 @@ export default class GeoJSONInput extends GeoJSONMap {
 				</div>
 
 				<div class="button-group">
-					<button type="button" name="tool" value="pan" aria-pressed="true">Pan ␣</button>
-					<button type="button" name="tool" value="add" aria-pressed="false">Add ⇧</button>
-					<button type="button" name="tool" value="subtract" aria-pressed="false">Subtract ⌥</button>
-					<button type="button" name="tool" value="select" aria-pressed="false">Select ⌘</button>
+					<button type="button" name="tool" value="pan" aria-pressed="true">
+						<span>Pan</span>
+						<span>␣</span>
+					</button>
+					<button type="button" name="tool" value="add" aria-pressed="false">
+						<span>Add</span>
+						<span>⇧</span>
+					</button>
+					<button type="button" name="tool" value="subtract" aria-pressed="false">
+						<span>Subtract</span>
+						<span>⌥</span>
+					</button>
+					<button type="button" name="tool" value="select" aria-pressed="false">
+						<span>Select</span>
+						<span>⌘</span>
+					</button>
 				</div>
 
 				<div class="button-group">

@@ -41,6 +41,8 @@
 		<output id="form-output" for="form"></output>
 
 		<script type="module">
+			import 'https://unpkg.com/element-internals-polyfill';
+
 			import GeoJSONInput from './src/geojson-input.ts';
 			customElements.define('geojson-input', GeoJSONInput);
 
