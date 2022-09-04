@@ -1,11 +1,8 @@
-import { CircleMarker, FeatureGroup, LatLng, LatLngExpression, Map, Polygon } from 'leaflet';
+import { CircleMarker, FeatureGroup, LatLng, Map, Polygon } from 'leaflet';
 
 const COLOR = 'royalblue';
 
 export class CornerMarker extends CircleMarker {
-	polygon: EditablePolygon | undefined;
-	coord: LatLng | undefined;
-
 	#selected = false;
 
 	get selected(): boolean {
@@ -19,21 +16,17 @@ export class CornerMarker extends CircleMarker {
 
 	constructor(...args: ConstructorParameters<typeof CircleMarker>) {
 		super(...args);
-
-		this.selected = this.selected;
 		this.setRadius(5);
 		this.setStyle({ color: COLOR, fillOpacity: 1 });
+		this.selected = this.selected;
 	}
 
-	setLatLng(latLng: LatLngExpression): this {
-		super.setLatLng(latLng);
-		if (this.polygon && this.coord) {
-			const newLatLng = this.getLatLng();
-			this.coord.lat = newLatLng.lat;
-			this.coord.lng = newLatLng.lng;
-			this.polygon.redraw();
-		}
-		return this;
+	translateLatLng(latDelta: number, lngDelta: number) {
+		const latLng = this.getLatLng();
+		latLng.lat += latDelta;
+		latLng.lng += lngDelta;
+		this.setLatLng(latLng);
+		this.fire('update', null, true);
 	}
 }
 
@@ -49,17 +42,19 @@ export class EditablePolygon extends Polygon {
 
 	onAdd(map: Map) {
 		super.onAdd(map);
-		this.corners.addTo(map);
 		this.addEventParent(map);
+		this.corners.addTo(map);
 		this.corners.addEventParent(map);
+		this.corners.on('update', this.handleCornerUpdates, this);
 		return this;
 	}
 
 	onRemove(map: Map) {
 		super.onRemove(map);
 		this.removeEventParent(map);
-		this.corners.removeEventParent(map);
 		this.corners.removeFrom(map);
+		this.corners.removeEventParent(map);
+		this.corners.off('update', this.handleCornerUpdates, this);
 		return this;
 	}
 
@@ -69,35 +64,42 @@ export class EditablePolygon extends Polygon {
 		return this;
 	}
 
+	#cornerDidUpdate = false;
+	handleCornerUpdates() {
+		if (this.#cornerDidUpdate) return;
+		this.#cornerDidUpdate = true;
+		requestAnimationFrame(() => {
+			this.redraw();
+			this.#cornerDidUpdate = false;
+		});
+	}
+
 	redrawCorners(latLngs = this.getLatLngs()) {
 		this.corners.clearLayers();
-		const points = latLngs.flat(Infinity);
-		if (points.length > 200) return;
-		points.forEach(point => {
-			point = point as LatLng;
-			const corner = new CornerMarker(point);
-			corner.polygon = this;
-			corner.coord = point;
+		const cornerCoords = latLngs.flat(Infinity) as LatLng[];
+		if (cornerCoords.length > 100) return;
+		cornerCoords.forEach(latLng => {
+			const corner = new CornerMarker(latLng);
 			this.corners.addLayer(corner);
 			corner.bringToFront();
 		});
 	}
 
-	filterLatLngs(fn: (latLng: LatLng) => any, latLngs = this.getLatLngs()): ReturnType<Polygon['getLatLngs']> {
+	removeCorners(corners: CornerMarker[]) {
+		const cornerLatLngs = corners.map(c => c.getLatLng());
+		const newLatLngs = this.filterLatLngs(this.getLatLngs(), latLng => {
+			return !cornerLatLngs.includes(latLng);
+		});
+		this.setLatLngs(newLatLngs);
+	}
+
+	filterLatLngs(latLngs: ReturnType<Polygon['getLatLngs']>, fn: (latLng: LatLng) => any): ReturnType<Polygon['getLatLngs']> {
 		return latLngs.map(item => {
 			if (Array.isArray(item) && Array.isArray(item[0])) {
-				return this.filterLatLngs(fn, item);
+				return this.filterLatLngs(item, fn);
 			} else {
 				return (item as LatLng[]).filter(ll => fn(ll));
 			}
 		}) as ReturnType<Polygon['getLatLngs']>;
-	}
-
-	removeCorner(corner: CornerMarker) {
-		const cornerLatLng = corner.getLatLng();
-		const newLatLngs = this.filterLatLngs((latLng) => {
-			return latLng !== cornerLatLng;
-		});
-		this.setLatLngs(newLatLngs);
 	}
 }

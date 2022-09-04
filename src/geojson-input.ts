@@ -124,8 +124,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 				</div>
 
 				<div class="button-group">
-					<button type="button" name="import" value="geojson">GeoJSON</button>
-					<button type="button" name="import" value="shapefile">Shapefile</button>
+					<button type="button" name="import" value="geojson">Paste…</button>
+					<button type="button" name="import" value="shapefile">Import…</button>
 				</div>
 			</div>
 		`);
@@ -241,8 +241,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 			const latDelta = latlng.lat - this.inputDragCoords.lat;
 			const lngDelta = latlng.lng - this.inputDragCoords.lng;
 			this.selectedCorners.forEach(corner => {
-				const cornerLatlng = corner.getLatLng();
-				corner.setLatLng([cornerLatlng.lat + latDelta, cornerLatlng.lng + lngDelta]);
+				corner.translateLatLng(latDelta, lngDelta);
 			});
 		}
 		this.inputDragCoords = latlng;
@@ -340,7 +339,9 @@ export default class GeoJSONInput extends GeoJSONMap {
 		if (['Backspace', 'Delete'].includes(event.originalEvent.key)) {
 			const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
 			polygons.forEach(polygon => {
-				this.selectedCorners.forEach(c => polygon.removeCorner(c));
+				const polygonCorners = polygon.corners.getLayers() as CornerMarker[];
+				const toRemove = polygonCorners.filter(c => this.selectedCorners.includes(c));
+				polygon.removeCorners(toRemove);
 				if (polygon.corners.getLayers().length < 3) {
 					this.valuePolygons.removeLayer(polygon);
 				}
@@ -363,10 +364,11 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	importGeoJSON() {
 		try {
-			const geojson = prompt('Paste in a GeoJSON feature')?.trim();
+			const geojson = prompt('Paste in a GeoJSON feature', this.getAttribute('value') ?? '')?.trim();
 			if (geojson) {
-				this.undoStack.push(this.value);
-				this.value = JSON.parse(geojson);
+				const newValue = JSON.parse(geojson);
+				this.value = newValue;
+				this.syncValue();
 			}
 		} catch (error) {
 			console.error(error);
@@ -388,8 +390,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 				const shpBuffer = await shpFile.arrayBuffer();
 				let result = await shp.parseShp(shpBuffer);
 				if (Array.isArray(result)) result = result[0];
-				this.undoStack.push(this.value);
 				this.value = result;
+				this.syncValue();
 			} catch (error) {
 				console.error(error);
 				alert('Couldn’t read shapefile');
