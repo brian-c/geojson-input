@@ -72,6 +72,7 @@ export class EditablePolygon extends Polygon {
 	redrawCorners(latLngs = this.getLatLngs()) {
 		this.corners.clearLayers();
 		const points = latLngs.flat(Infinity);
+		if (points.length > 200) return;
 		points.forEach(point => {
 			point = point as LatLng;
 			const corner = new CornerMarker(point);

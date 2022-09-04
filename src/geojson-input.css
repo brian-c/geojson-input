@@ -12,7 +12,7 @@
 
 .button-group {
 	display: flex;
-	filter: drop-shadow(1px 2px #0006);
+	filter: drop-shadow(1px 2px #0004);
 	flex-direction: column;
 	margin: 2vw;
 }
@@ -20,8 +20,9 @@
 button {
 	appearance: none;
 	background: white;
-	border: 2px solid black;
+	border: 1px solid black;
 	color: black;
+	cursor: pointer;
 	font-weight: bold;
 	margin: 0;
 	padding: 0.5ch 1.5ch;

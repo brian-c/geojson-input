@@ -15,6 +15,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 	static formAssociated = true;
 	internals: ElementInternals;
 
+	static shp: any;
+
 	toolbar: HTMLDivElement;
 	toolWithoutKey: Tool | null = null;
 	modifierKeysDown = new Set<KeyboardEvent['key']>();
@@ -122,7 +124,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 				</div>
 
 				<div class="button-group">
-					<button type="button" name="import" value="geojson" aria-pressed="true">GeoJSON…</button>
+					<button type="button" name="import" value="geojson">GeoJSON</button>
+					<button type="button" name="import" value="shapefile">Shapefile</button>
 				</div>
 			</div>
 		`);
@@ -176,6 +179,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 			} else if (button.name === 'import') {
 				if (button.value === 'geojson') {
 					this.importGeoJSON();
+				} else if (button.value === 'shapefile') {
+					this.importShapefile();
 				}
 			}
 		}
@@ -353,8 +358,33 @@ export default class GeoJSONInput extends GeoJSONMap {
 				this.value = JSON.parse(geojson);
 			}
 		} catch (error) {
+			console.error(error);
 			alert('Invalid GeoJSON');
 		}
+	}
+
+	importShapefile() {
+		const input = document.createElement('input');
+		input.type = 'file';
+		input.accept = '.shp';
+		this.append(input);
+		input.onchange = async () => {
+			const { shp } = GeoJSONInput;
+			try {
+				const shpFile = Array.from(input.files!).find(f => f.name.endsWith('.shp'));
+				input.remove();
+				if (!shpFile) return;
+				const shpBuffer = await shpFile.arrayBuffer();
+				let result = await shp.parseShp(shpBuffer);
+				if (Array.isArray(result)) result = result[0];
+				this.undoStack.push(this.value);
+				this.value = result;
+			} catch (error) {
+				console.error(error);
+				alert('Couldn’t read shapefile');
+			}
+		};
+		input.click();
 	}
 
 	featureToPolygons(feature: Value): EditablePolygon[] {

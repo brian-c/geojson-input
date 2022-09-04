@@ -42,9 +42,12 @@
 
 		<script type="module">
 			import 'https://unpkg.com/element-internals-polyfill';
+			import 'https://unpkg.com/shpjs@4.0.4/dist/shp.js';
 
 			import GeoJSONInput from './src/geojson-input.ts';
 			customElements.define('geojson-input', GeoJSONInput);
+
+			GeoJSONInput.shp = globalThis.shp;
 
 			const form = document.getElementById('form');
 			const output = document.getElementById('form-output');
