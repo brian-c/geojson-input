@@ -192,7 +192,10 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 		this.inputStart = event;
 
-		const fromPolygon = event.sourceTarget instanceof EditablePolygon && !['select', 'subtract'].includes(this.tool);
+		const modifiedTool = (this.tool === 'subtract' && this.modifierKeysDown.has('Alt'))
+		 || this.tool === 'add' && this.modifierKeysDown.has('Shift');
+
+		const fromPolygon = event.sourceTarget instanceof EditablePolygon && !modifiedTool;
 		const fromCorner = event.sourceTarget instanceof CornerMarker;
 
 		if (fromPolygon) {
@@ -266,8 +269,8 @@ export default class GeoJSONInput extends GeoJSONMap {
 		if (!this.map.hasLayer(this.inputRect)) {
 			this.map.addLayer(this.inputRect);
 		}
-		const latlng = this.map.mouseEventToLatLng(event);
-		this.inputRect.setBounds(new LatLngBounds(this.inputStart.latlng, latlng));
+		this.inputDragCoords = this.map.mouseEventToLatLng(event);
+		this.inputRect.setBounds(new LatLngBounds(this.inputStart.latlng, this.inputDragCoords));
 
 		if (this.tool === 'select') {
 			if (!event.shiftKey) {
@@ -291,7 +294,14 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 		if (!this.inputStart) return;
 
+		if (this.tool === 'select') {
+			if (!this.inputDragCoords) {
+				this.selectedCorners.forEach(c => c.selected = false);
+			}
+		}
+
 		if (this.tool === 'add') {
+			if (!this.inputDragCoords) return;
 			const latLngs = this.inputRect.getLatLngs();
 			const newPolygon = new EditablePolygon(latLngs);
 			this.valuePolygons.addLayer(newPolygon);
@@ -299,6 +309,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 
 		if (this.tool === 'subtract') {
+			if (!this.inputDragCoords) return;
 			const inputFeature = this.inputRect.toGeoJSON();
 			const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
 			polygons.forEach(polygon => {
