@@ -7,7 +7,9 @@ import GeoJSONMap from './geojson-map';
 type Value = GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>
 	| GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 
-	type Tool = 'pan' | 'select' | 'add' | 'subtract';
+type Tool = 'pan' | 'select' | 'add' | 'subtract';
+
+const MODIFIERS_KEYS = [' ', 'Meta', 'Shift', 'Alt'];
 
 export default class GeoJSONInput extends GeoJSONMap {
 	static formAssociated = true;
@@ -15,12 +17,15 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	toolbar: HTMLDivElement;
 	toolWithoutKey: Tool | null = null;
-	keysDown = new Set<KeyboardEvent['key']>();
+	modifierKeysDown = new Set<KeyboardEvent['key']>();
 
 	inputStart: LeafletMouseEvent | null = null;
 	inputDragCoords: LatLng | null = null;
 	inputRect = new Rectangle([[0, 0], [0, 0]], { color: 'gray', interactive: false });
 	valuePolygons = new FeatureGroup<EditablePolygon>();
+
+	undoStack: (Value | null)[] = [];
+	redoStack: (Value | null)[] = [];
 
 	get name(): string | undefined {
 		return this.getAttribute('name') ?? undefined;
@@ -147,14 +152,15 @@ export default class GeoJSONInput extends GeoJSONMap {
 	}
 
 	handleGlobalKeyboardEvent = (event: KeyboardEvent) => {
+		if (!MODIFIERS_KEYS.includes(event.key)) return;
 		this.toolWithoutKey ??= this.tool;
 		const addOrDelete = event.type === 'keydown' ? 'add' : 'delete';
-		this.keysDown[addOrDelete](event.key);
-		if (this.keysDown.has(' ')) this.tool = 'pan';
-		if (this.keysDown.has('Meta')) this.tool = 'select';
-		if (this.keysDown.has('Shift') && this.tool !== 'select') this.tool = 'add';
-		if (this.keysDown.has('Alt')) this.tool = 'subtract';
-		if (this.keysDown.size === 0) {
+		this.modifierKeysDown[addOrDelete](event.key);
+		if (this.modifierKeysDown.has(' ')) this.tool = 'pan';
+		if (this.modifierKeysDown.has('Meta')) this.tool = 'select';
+		if (this.modifierKeysDown.has('Shift') && this.tool !== 'select') this.tool = 'add';
+		if (this.modifierKeysDown.has('Alt')) this.tool = 'subtract';
+		if (this.modifierKeysDown.size === 0) {
 			this.tool = this.toolWithoutKey;
 			this.toolWithoutKey = null;
 		}
@@ -180,7 +186,6 @@ export default class GeoJSONInput extends GeoJSONMap {
 		event.originalEvent.preventDefault();
 
 		this.inputStart = event;
-		this.inputDragCoords = null;
 
 		const fromPolygon = event.sourceTarget instanceof EditablePolygon && !['select', 'subtract'].includes(this.tool);
 		const fromCorner = event.sourceTarget instanceof CornerMarker;
@@ -238,13 +243,16 @@ export default class GeoJSONInput extends GeoJSONMap {
 	handleCornerRelease = () => {
 		removeEventListener('pointermove', this.handleCornerDrag);
 		removeEventListener('pointerup', this.handleCornerRelease);
-		this.tool = this.tool;
 
-		const fromPolygon = this.inputStart?.sourceTarget instanceof EditablePolygon;
+		if (!this.inputStart) return;
+
+		const fromPolygon = this.inputStart.sourceTarget instanceof EditablePolygon;
 		if (fromPolygon && !this.inputDragCoords) {
 			this.selectedCorners.forEach(c => c.selected = false);
 		}
 
+		this.inputStart = null;
+		this.inputDragCoords = null;
 		this.syncValue();
 	}
 
@@ -276,10 +284,13 @@ export default class GeoJSONInput extends GeoJSONMap {
 		removeEventListener('pointerup', this.handleMapRelease);
 		this.inputRect.remove();
 
+		if (!this.inputStart) return;
+
 		if (this.tool === 'add') {
 			const latLngs = this.inputRect.getLatLngs();
 			const newPolygon = new EditablePolygon(latLngs);
 			this.valuePolygons.addLayer(newPolygon);
+			this.syncValue();
 		}
 
 		if (this.tool === 'subtract') {
@@ -296,12 +307,20 @@ export default class GeoJSONInput extends GeoJSONMap {
 					this.valuePolygons.removeLayer(polygon);
 				}
 			});
+			this.syncValue();
 		}
 
-		this.syncValue();
+		this.inputStart = null;
+		this.inputDragCoords = null;
 	};
 
 	handleMapKeydown: LeafletKeyboardEventHandlerFn = event => {
+		if (event.originalEvent.key === 'Escape' && this.inputStart) {
+			this.inputStart = null;
+			this.inputDragCoords = null;
+			dispatchEvent(new CustomEvent('pointerup', { bubbles: true }));
+		}
+
 		if (['Backspace', 'Delete'].includes(event.originalEvent.key)) {
 			const polygons = this.valuePolygons.getLayers() as EditablePolygon[];
 			polygons.forEach(polygon => {
@@ -312,12 +331,27 @@ export default class GeoJSONInput extends GeoJSONMap {
 			});
 			this.syncValue();
 		}
+
+		if (event.originalEvent.key === 'z' && this.modifierKeysDown.has('Meta')) {
+			if (this.modifierKeysDown.has('Shift')) {
+				if (this.redoStack.length !== 0) {
+					this.undoStack.push(this.value);
+					this.value = this.redoStack.pop()!;
+				}
+			} else if (this.undoStack.length !== 0) {
+				this.redoStack.push(this.value);
+				this.value = this.undoStack.pop()!;
+			}
+		}
 	}
 
 	importGeoJSON() {
 		try {
 			const geojson = prompt('Paste in a GeoJSON feature')?.trim();
-			if (geojson) this.value = JSON.parse(geojson);
+			if (geojson) {
+				this.undoStack.push(this.value);
+				this.value = JSON.parse(geojson);
+			}
 		} catch (error) {
 			alert('Invalid GeoJSON');
 		}
@@ -327,7 +361,9 @@ export default class GeoJSONInput extends GeoJSONMap {
 		if (feature.type === 'FeatureCollection') {
 			return feature.features.map(f => this.featureToPolygons(f)).flat();
 		}
+
 		const coords = getCoords<GeoJSON.Polygon | GeoJSON.MultiPolygon>(feature);
+
 		try {
 			const latLngs = GeoJSON.coordsToLatLngs(coords, 1);
 			return [new EditablePolygon(latLngs)];
@@ -340,17 +376,21 @@ export default class GeoJSONInput extends GeoJSONMap {
 	}
 
 	syncValue() {
+		this.undoStack.push(this.value);
+
 		let value: typeof this.value = this.valuePolygons.toGeoJSON() as GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 		if (value.features.length === 0) {
 			value = null;
 		} else if (value.features.length === 1) {
 			value = value.features[0];
 		}
+
 		if (value) {
-			// Pre-set the attribute to avoid redrawing.
+			// Pre-set the attribute to prevent redrawing.
 			const stringValue = JSON.stringify(value);
 			this.setAttribute('value', stringValue);
 		}
+
 		this.value = value;
 	}
 }
