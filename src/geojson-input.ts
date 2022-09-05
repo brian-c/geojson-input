@@ -181,6 +181,7 @@ export default class GeoJSONInput extends GeoJSONMapWithTool {
 	}
 
 	handleCornerRelease() {
+		this.tool = this.tool;
 		removeEventListener('pointermove', this.handleCornerDrag);
 		removeEventListener('pointerup', this.handleCornerRelease);
 
@@ -197,6 +198,7 @@ export default class GeoJSONInput extends GeoJSONMapWithTool {
 	}
 
 	handleMapDrag (event: PointerEvent) {
+		this.tool = this.tool;
 		if (!this.inputStart) return;
 
 		if (!this.map.hasLayer(this.inputRect)) {
