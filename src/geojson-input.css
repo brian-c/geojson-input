@@ -3,64 +3,6 @@
 	position: relative;
 }
 
-#toolbar {
-	position: absolute;
-	left: 0;
-	top: 0;
-	z-index: 401;
-}
-
-.button-group {
-	display: flex;
-	filter: drop-shadow(1px 2px #0004);
-	flex-direction: column;
-	margin: 2vw;
-}
-
-button {
-	appearance: none;
-	background: white;
-	border: 1px solid black;
-	color: black;
-	cursor: pointer;
-	font-weight: bold;
-	margin: 0;
-	padding: 0.5ch 1.5ch;
-}
-
-button:first-child {
-	border-start-end-radius: 1ch;
-	border-start-start-radius: 1ch;
-}
-
-button:last-child {
-	border-end-end-radius: 1ch;
-	border-end-start-radius: 1ch;
-}
-
-button:not(:first-child) {
-	border-top: 0;
-}
-
-button:active {
-	background: black;
-	color: white;
-}
-
-button[name="tool"][aria-pressed="true"] {
-	background: royalblue;
-	color: white;
-}
-
-button[name="tool"] {
-	display: flex;
-	justify-content: space-between;
-}
-
-button[name="tool"] > :not(:first-child) {
-	margin-inline-start: 1ch;
-}
-
 :host([tool="add"]) > #map-container,
 :host([tool="subtract"]) > #map-container {
 	cursor: crosshair;

@@ -47,7 +47,7 @@
 			import GeoJSONInput from './src/geojson-input.ts';
 			customElements.define('geojson-input', GeoJSONInput);
 
-			GeoJSONInput.shp = globalThis.shp;
+			GeoJSONInput.prototype.shp = globalThis.shp;
 
 			const form = document.getElementById('form');
 			const output = document.getElementById('form-output');

@@ -51,6 +51,10 @@ export default class GeoJSONMap extends HTMLElement {
 		this.map = new LeafletMap(mapContainer);
 		this.map.addLayer(new TileLayer(this.tiles));
 		this.map.setView(new LatLng(this.center[1], this.center[0]), this.zoom);
+	}
+
+	connectedCallback() {
+		this.map.invalidateSize();
 
 		this.map.on('zoomend', () => {
 			this.zoom = this.map.getZoom();
@@ -62,11 +66,8 @@ export default class GeoJSONMap extends HTMLElement {
 		});
 	}
 
-	connectedCallback() {
-		this.map.invalidateSize();
-	}
-
 	disconnectedCallback() {
-		this.map.remove();
+		this.map.off();
+		// this.map.remove();
 	}
 }

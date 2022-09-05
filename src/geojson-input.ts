@@ -1,25 +1,17 @@
 import { difference, getCoords } from '@turf/turf';
-import { FeatureGroup, GeoJSON, LatLng, LatLngBounds, LeafletKeyboardEventHandlerFn, LeafletMouseEvent, LeafletMouseEventHandlerFn, Rectangle } from 'leaflet';
+import { FeatureGroup, GeoJSON, LatLng, LatLngBounds, LeafletKeyboardEvent, LeafletMouseEvent, Rectangle } from 'leaflet';
 import { CornerMarker, EditablePolygon } from './editable-polygon';
 import inputCss from './geojson-input.css';
-import GeoJSONMap from './geojson-map';
+import GeoJSONMapWithTool from './with-tool';
 
 type Value = GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>
 	| GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon>;
 
-type Tool = 'pan' | 'select' | 'add' | 'subtract';
-
-const MODIFIERS_KEYS = [' ', 'Meta', 'Shift', 'Alt'];
-
-export default class GeoJSONInput extends GeoJSONMap {
+export default class GeoJSONInput extends GeoJSONMapWithTool {
 	static formAssociated = true;
 	internals: ElementInternals;
 
-	static shp: any;
-
-	toolbar: HTMLDivElement;
-	toolWithoutKey: Tool | null = null;
-	modifierKeysDown = new Set<KeyboardEvent['key']>();
+	shp: any;
 
 	inputStart: LeafletMouseEvent | null = null;
 	inputDragCoords: LatLng | null = null;
@@ -61,26 +53,16 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.dispatchEvent(new CustomEvent('change', { bubbles: true }));
 	}
 
-	get tool(): Tool {
-		return this.getAttribute('tool') as Tool ?? 'pan';
+	get tool() {
+		return super.tool;
 	}
 
 	set tool(value) {
-		const panAndZoomToggle = value === 'pan' ? 'enable' : 'disable';
-		this.map.dragging[panAndZoomToggle]();
-		this.map.boxZoom[panAndZoomToggle]();
-
+		super.tool = value;
 		this.inputRect.setStyle({
 			dashArray: value === 'select' ? [4, 8] : undefined,
 			fill: value !== 'select',
 		});
-
-		const buttons: NodeListOf<HTMLButtonElement> = this.toolbar.querySelectorAll('button[name="tool"]');
-		for (const button of buttons) {
-			button.setAttribute('aria-pressed', String(button.value === value));
-		}
-
-		this.setAttribute('tool', value);
 	}
 
 	get selectedCorners() {
@@ -91,102 +73,53 @@ export default class GeoJSONInput extends GeoJSONMap {
 
 	constructor() {
 		super();
-		this.internals = this.attachInternals();
+		this.handleCornerDrag = this.handleCornerDrag.bind(this);
+		this.handleCornerRelease = this.handleCornerRelease.bind(this);
+		this.handleMapDrag = this.handleMapDrag.bind(this);
+		this.handleMapRelease = this.handleMapRelease.bind(this);
 
-		this.map.zoomControl.remove();
+		this.internals = this.attachInternals();
 
 		this.map.getContainer().insertAdjacentHTML('beforebegin', `
 			<style>${inputCss}</style>
-
-			<div id="toolbar">
-				<div class="button-group">
-					<button type="button" name="zoom" value="1"><big>+</big></button>
-					<button type="button" name="zoom" value="-1"><big>&ndash;</big></button>
-				</div>
-
-				<div class="button-group">
-					<button type="button" name="tool" value="pan" aria-pressed="true">
-						<span>Pan</span>
-						<span>␣</span>
-					</button>
-					<button type="button" name="tool" value="add" aria-pressed="false">
-						<span>Add</span>
-						<span>⇧</span>
-					</button>
-					<button type="button" name="tool" value="subtract" aria-pressed="false">
-						<span>Subtract</span>
-						<span>⌥</span>
-					</button>
-					<button type="button" name="tool" value="select" aria-pressed="false">
-						<span>Select</span>
-						<span>⌘</span>
-					</button>
-				</div>
-
-				<div class="button-group">
-					<button type="button" name="import" value="geojson">Paste…</button>
-					<button type="button" name="import" value="shapefile">Import…</button>
-				</div>
-			</div>
 		`);
 
-		this.toolbar = this.shadowRoot?.getElementById('toolbar') as HTMLDivElement;
+		this.toolbar.insertAdjacentHTML('beforeend', `
+			<div class="button-group">
+				<button type="button" name="import" value="geojson">Paste…</button>
+				<button type="button" name="import" value="shapefile">Import…</button>
+			</div>
+		`);
 
 		this.map.addLayer(this.valuePolygons);
 	}
 
 	connectedCallback() {
 		super.connectedCallback();
-		addEventListener('keydown', this.handleGlobalKeyboardEvent);
-		addEventListener('keyup', this.handleGlobalKeyboardEvent);
-		this.toolbar.addEventListener('click', this.handleToolbarClick);
-		this.map.on('mousedown', this.handleMapMouseDown);
-		this.map.on('keydown', this.handleMapKeydown);
+		this.map.on('mousedown', this.handleMapMouseDown, this);
+		this.map.on('keydown', this.handleMapKeydown, this);
 		this.value = this.value;
 	}
 
 	disconnectedCallback() {
-		removeEventListener('keydown', this.handleGlobalKeyboardEvent);
-		removeEventListener('keyup', this.handleGlobalKeyboardEvent);
-		this.toolbar.removeEventListener('click', this.handleToolbarClick);
-		this.map.off('mousedown', this.handleMapMouseDown);
-		this.map.off('keydown', this.handleMapKeydown);
+		this.map.off('mousedown', this.handleMapMouseDown, this);
+		this.map.off('keydown', this.handleMapKeydown, this);
 		super.disconnectedCallback();
 	}
 
-	handleGlobalKeyboardEvent = (event: KeyboardEvent) => {
-		if (!MODIFIERS_KEYS.includes(event.key)) return;
-		this.toolWithoutKey ??= this.tool;
-		const addOrDelete = event.type === 'keydown' ? 'add' : 'delete';
-		this.modifierKeysDown[addOrDelete](event.key);
-		if (this.modifierKeysDown.has(' ')) this.tool = 'pan';
-		if (this.modifierKeysDown.has('Meta')) this.tool = 'select';
-		if (this.modifierKeysDown.has('Shift') && this.tool !== 'select') this.tool = 'add';
-		if (this.modifierKeysDown.has('Alt')) this.tool = 'subtract';
-		if (this.modifierKeysDown.size === 0) {
-			this.tool = this.toolWithoutKey;
-			this.toolWithoutKey = null;
-		}
-	}
-
-	handleToolbarClick = (event: MouseEvent) => {
-		const button = (event.target as typeof this.toolbar).closest('button');
-		if (button instanceof HTMLButtonElement) {
-			if (button.name === 'zoom') {
-				this.map.zoomIn(parseFloat(button.value));
-			} else if (button.name === 'tool') {
-				this.tool = button.value as Tool;
-			} else if (button.name === 'import') {
-				if (button.value === 'geojson') {
-					this.importGeoJSON();
-				} else if (button.value === 'shapefile') {
-					this.importShapefile();
-				}
+	handleToolbarClick(event: MouseEvent) {
+		const button = super.handleToolbarClick(event);
+		if (button instanceof HTMLButtonElement && button.name === 'import') {
+			if (button.value === 'geojson') {
+				this.importGeoJSON();
+			} else if (button.value === 'shapefile') {
+				this.importShapefile();
 			}
 		}
+		return button;
 	};
 
-	handleMapMouseDown: LeafletMouseEventHandlerFn = event => {
+	handleMapMouseDown(event: LeafletMouseEvent) {
 		if (event.originalEvent.defaultPrevented) return;
 		event.originalEvent.preventDefault();
 
@@ -235,7 +168,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 	};
 
-	handleCornerDrag = (event: PointerEvent) => {
+	handleCornerDrag(event: PointerEvent) {
 		const latlng = this.map.mouseEventToLatLng(event);
 		if (this.inputDragCoords) {
 			const latDelta = latlng.lat - this.inputDragCoords.lat;
@@ -247,7 +180,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.inputDragCoords = latlng;
 	}
 
-	handleCornerRelease = () => {
+	handleCornerRelease() {
 		removeEventListener('pointermove', this.handleCornerDrag);
 		removeEventListener('pointerup', this.handleCornerRelease);
 
@@ -263,11 +196,13 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.syncValue();
 	}
 
-	handleMapDrag = (event: PointerEvent) => {
+	handleMapDrag (event: PointerEvent) {
 		if (!this.inputStart) return;
+
 		if (!this.map.hasLayer(this.inputRect)) {
 			this.map.addLayer(this.inputRect);
 		}
+
 		this.inputDragCoords = this.map.mouseEventToLatLng(event);
 		this.inputRect.setBounds(new LatLngBounds(this.inputStart.latlng, this.inputDragCoords));
 
@@ -275,6 +210,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 			if (!event.shiftKey) {
 				this.selectedCorners.forEach(c => c.selected = false);
 			}
+
 			this.map.eachLayer(layer => {
 				if (layer instanceof CornerMarker) {
 					const contained = this.inputRect.getBounds().contains(layer.getLatLng());
@@ -286,7 +222,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		}
 	};
 
-	handleMapRelease = () => {
+	handleMapRelease() {
 		removeEventListener('pointermove', this.handleMapDrag);
 		removeEventListener('pointerup', this.handleMapRelease);
 		this.inputRect.remove();
@@ -329,7 +265,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		this.inputDragCoords = null;
 	};
 
-	handleMapKeydown: LeafletKeyboardEventHandlerFn = event => {
+	handleMapKeydown(event: LeafletKeyboardEvent) {
 		if (event.originalEvent.key === 'Escape' && this.inputStart) {
 			this.inputStart = null;
 			this.inputDragCoords = null;
@@ -382,7 +318,7 @@ export default class GeoJSONInput extends GeoJSONMap {
 		input.accept = '.shp';
 		this.append(input);
 		input.onchange = async () => {
-			const { shp } = GeoJSONInput;
+			const { shp } = this;
 			try {
 				const shpFile = Array.from(input.files!).find(f => f.name.endsWith('.shp'));
 				input.remove();
