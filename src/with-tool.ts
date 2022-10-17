@@ -42,26 +42,30 @@ export default class GeoJSONMapWithTool extends GeoJSONMap {
 			<style>${toolbarCss}</style>
 
 			<div class="button-group">
-				<button type="button" name="zoom" value="1"><big>+</big></button>
-				<button type="button" name="zoom" value="-1"><big>&ndash;</big></button>
+				<button type="button" name="zoom" value="1">
+					<big>+</big>
+				</button>
+				<button type="button" name="zoom" value="-1">
+					<big>&ndash;</big>
+				</button>
 			</div>
 
 			<div class="button-group">
 				<button type="button" name="tool" value="pan" aria-pressed="true">
 					<span>Pan</span>
-					<span>␣</span>
+					<kbd>␣</kbd>
 				</button>
 				<button type="button" name="tool" value="add" aria-pressed="false">
 					<span>Add</span>
-					<span>⇧</span>
+					<kbd>⇧</kbd>
 				</button>
 				<button type="button" name="tool" value="subtract" aria-pressed="false">
 					<span>Subtract</span>
-					<span>⌥</span>
+					<kbd>⌥</kbd>
 				</button>
 				<button type="button" name="tool" value="select" aria-pressed="false">
 					<span>Select</span>
-					<span>⌘</span>
+					<kbd>⌘</kbd>
 				</button>
 			</div>
 		`;

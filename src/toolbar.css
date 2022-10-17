@@ -1,6 +1,12 @@
 #toolbar {
-	position: absolute;
+	align-items: flex-start;
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
 	left: 0;
+	margin: 1rem;
+	pointer-events: none;
+	position: absolute;
 	top: 0;
 	z-index: 401;
 }
@@ -9,7 +15,7 @@
 	display: flex;
 	filter: drop-shadow(1px 2px #0004);
 	flex-direction: column;
-	margin: 2vw;
+	pointer-events: initial;
 }
 
 button {
@@ -54,4 +60,9 @@ button[name="tool"] {
 
 button[name="tool"] > :not(:first-child) {
 	margin-inline-start: 1ch;
+}
+
+button kbd {
+	font-family: inherit;
+	opacity: 0.6;
 }

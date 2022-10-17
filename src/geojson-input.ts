@@ -86,8 +86,8 @@ export default class GeoJSONInput extends GeoJSONMapWithTool {
 
 		this.toolbar.insertAdjacentHTML('beforeend', `
 			<div class="button-group">
-				<button type="button" name="import" value="geojson">Paste…</button>
-				<button type="button" name="import" value="shapefile">Import…</button>
+				<button type="button" name="import" value="geojson">Copy/paste GeoJSON…</button>
+				<button type="button" name="import" value="shapefile">Import shapefile…</button>
 			</div>
 		`);
 
