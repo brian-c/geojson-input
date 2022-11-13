@@ -14,7 +14,8 @@
   ],
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build"
+    "build": "tsc && vite build",
+    "build-lib": "tsc && vite build --config vite-lib.config.ts"
   },
   "dependencies": {
     "@turf/turf": "^6.5.0",
